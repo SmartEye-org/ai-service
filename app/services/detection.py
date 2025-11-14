@@ -1,10 +1,12 @@
 """
-Simplified Detection Service for MVP
+Simplified Detection Service for MVP with Async & Batch Support
 """
 import cv2
 import numpy as np
+import asyncio
 from typing import List, Dict, Tuple
 from datetime import datetime
+import logging
 
 # PyTorch 2.6+ fix
 import torch
@@ -20,9 +22,11 @@ torch.load = patched_torch_load
 from ultralytics import YOLO
 import mediapipe as mp
 
+logger = logging.getLogger(__name__)
+
 
 class SimpleDetectionService:
-    """Simplified detection service for MVP"""
+    """Simplified detection service for MVP with async support"""
     
     def __init__(self, model_path: str = "models/yolov8n.pt"):
         print(f"Loading YOLO model from {model_path}...")
@@ -34,7 +38,7 @@ class SimpleDetectionService:
             min_detection_confidence=0.5
         )
         
-        print("✅ Detection service ready!")
+        print("==> Detection service ready!")
     
     def detect_persons(self, image: np.ndarray) -> List[Dict]:
         """Detect persons using YOLO"""
@@ -89,6 +93,117 @@ class SimpleDetectionService:
             'total_persons': len(detections),
             'timestamp': datetime.now().isoformat()
         }
+    
+    def detect_from_bytes(self, image_bytes: bytes, camera_id: str = "unknown") -> Dict:
+        """
+        Process detection from raw bytes
+        
+        Args:
+            image_bytes: Image data in bytes
+            camera_id: Camera identifier
+        
+        Returns:
+            Detection results
+        """
+        # Decode image
+        nparr = np.frombuffer(image_bytes, np.uint8)
+        img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+        
+        if img is None:
+            raise ValueError("Failed to decode image")
+        
+        # Process
+        results = self.process_image(img)
+        results['camera_id'] = camera_id
+        
+        return results
+    
+    async def detect_from_bytes_async(
+        self, 
+        image_bytes: bytes, 
+        camera_id: str = "unknown"
+    ) -> Dict:
+        """
+        Async version of detect_from_bytes for better performance
+        """
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(
+            None, 
+            self.detect_from_bytes, 
+            image_bytes, 
+            camera_id
+        )
+    
+    async def detect_batch(
+        self, 
+        frames: List[Tuple[bytes, str]]
+    ) -> List[Dict]:
+        """
+        Process multiple frames in batch for better performance
+        
+        Args:
+            frames: List of (image_bytes, camera_id) tuples
+        
+        Returns:
+            List of detection results
+        """
+        tasks = [
+            self.detect_from_bytes_async(image_bytes, camera_id)
+            for image_bytes, camera_id in frames
+        ]
+        
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        
+        # Filter out errors and return successful results
+        successful_results = []
+        for i, result in enumerate(results):
+            if isinstance(result, Exception):
+                camera_id = frames[i][1]
+                logger.error(f"Batch detection failed for camera {camera_id}: {result}")
+                # Return empty result for failed detection
+                successful_results.append({
+                    "detections": [],
+                    "total_persons": 0,
+                    "camera_id": camera_id,
+                    "error": str(result),
+                    "timestamp": datetime.now().isoformat(),
+                })
+            else:
+                successful_results.append(result)
+        
+        return successful_results
+    
+    def detect_from_frame_skip(
+        self,
+        image_bytes: bytes,
+        camera_id: str,
+        frame_number: int,
+        skip_rate: int = 2
+    ) -> Dict:
+        """
+        Process frame with skipping logic
+        
+        Args:
+            image_bytes: Image data
+            camera_id: Camera identifier
+            frame_number: Current frame number
+            skip_rate: Process every Nth frame
+        
+        Returns:
+            Detection result or cached result
+        """
+        # Only process every Nth frame
+        if frame_number % skip_rate != 0:
+            return {
+                "detections": [],
+                "total_persons": 0,
+                "camera_id": camera_id,
+                "skipped": True,
+                "frame_number": frame_number,
+                "timestamp": datetime.now().isoformat(),
+            }
+        
+        return self.detect_from_bytes(image_bytes, camera_id)
     
     def release(self):
         """Cleanup resources"""

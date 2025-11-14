@@ -58,13 +58,13 @@ class HealthResponse(BaseModel):
 @app.on_event("startup")
 async def startup_event():
     """Initialize detection service on startup"""
-    print("🚀 Starting AI Service...")
+    print("==> Starting AI Service... <==")
     try:
         # This will initialize the detection service
         service = get_detection_service()
-        print("✅ AI Service ready!")
+        print("==> AI Service ready!")
     except Exception as e:
-        print(f"❌ Failed to start service: {e}")
+        print(f"==> Failed to start service: {e}")
         raise
 
 
