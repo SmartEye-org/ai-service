@@ -40,6 +40,18 @@ def compile_proto():
         print(f"   - {proto_dir}/detection_service_pb2.py")
         print(f"   - {proto_dir}/detection_service_pb2_grpc.py")
         
+        # Fix import in grpc file
+        grpc_file = proto_dir / "detection_service_pb2_grpc.py"
+        if grpc_file.exists():
+            content = grpc_file.read_text(encoding='utf-8')
+            # Fix import: detection_service_pb2 -> proto.detection_service_pb2
+            content = content.replace(
+                "import detection_service_pb2 as detection__service__pb2",
+                "from proto import detection_service_pb2 as detection__service__pb2"
+            )
+            grpc_file.write_text(content, encoding='utf-8')
+            print(f"   - Fixed imports in {grpc_file.name}")
+
         # Create __init__.py if not exists
         init_file = proto_dir / "__init__.py"
         if not init_file.exists():
