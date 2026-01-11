@@ -30,8 +30,19 @@ class Settings(BaseSettings):
     PERSON_CONFIDENCE: float = 0.5
     FACE_CONFIDENCE: float = 0.5
     
-    # CORS - Đọc như string
+    # CORS
     ALLOWED_ORIGINS: str = "*"
+    
+    # ===== NEW: Streaming configs =====
+    STREAM_FPS: int = 5  # Process 5 frames per second
+    BATCH_SIZE: int = 4   # Process 4 frames at once
+    FRAME_SKIP: int = 2   # Process every 2nd frame
+    MAX_CONCURRENT_STREAMS: int = 10
+    DETECTION_TIMEOUT: float = 2.0  # seconds
+    
+    # WebSocket configs
+    WS_HEARTBEAT_INTERVAL: int = 30  # seconds
+    WS_MAX_MESSAGE_SIZE: int = 10 * 1024 * 1024  # 10MB
     
     @property
     def cors_origins(self) -> List[str]:

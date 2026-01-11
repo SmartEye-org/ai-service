@@ -1,0 +1,185 @@
+syntax = "proto3";
+
+package detection;
+
+// ==================== Common Messages ====================
+
+// Bounding box coordinates
+message BoundingBox {
+    int32 x1 = 1;
+    int32 y1 = 2;
+    int32 x2 = 3;
+    int32 y2 = 4;
+}
+
+// Image data
+message Image {
+    bytes image_data = 1;  // Encoded image (JPEG/PNG)
+    string camera_id = 2;
+    string timestamp = 3;
+}
+
+// ==================== Person Detection ====================
+
+// Single person detection result
+message PersonDetection {
+    int32 person_id = 1;
+    BoundingBox bbox = 2;
+    float confidence = 3;
+    bool face_detected = 4;  // Face detection result
+    string timestamp = 5;
+}
+
+// Person detection request
+message DetectPersonRequest {
+    Image image = 1;
+}
+
+// Person detection response
+message DetectPersonResponse {
+    repeated PersonDetection detections = 1;
+    int32 total_persons = 2;
+    string timestamp = 3;
+    bool success = 4;
+    string message = 5;
+}
+
+// ==================== Face Detection (Future) ====================
+
+// Face detection result
+message FaceDetection {
+    int32 face_id = 1;
+    BoundingBox bbox = 2;
+    float confidence = 3;
+    repeated float landmarks = 4;  // Facial landmarks (x1,y1,x2,y2,...)
+    string timestamp = 5;
+}
+
+// Face detection request
+message DetectFaceRequest {
+    Image image = 1;
+    BoundingBox roi = 2;  // Optional: Region of Interest
+}
+
+// Face detection response
+message DetectFaceResponse {
+    repeated FaceDetection detections = 1;
+    int32 total_faces = 2;
+    string timestamp = 3;
+    bool success = 4;
+    string message = 5;
+}
+
+// ==================== Face Recognition (Future) ====================
+
+// Face recognition result
+message FaceRecognition {
+    int32 face_id = 1;
+    string person_name = 2;
+    float confidence = 3;
+    repeated float embedding = 4;  // Face embedding vector
+}
+
+// Face recognition request
+message RecognizeFaceRequest {
+    Image image = 1;
+    BoundingBox face_bbox = 2;
+}
+
+// Face recognition response
+message RecognizeFaceResponse {
+    FaceRecognition recognition = 1;
+    bool success = 2;
+    string message = 3;
+}
+
+// ==================== Behavior Analysis (Future) ====================
+
+// Behavior type enum
+enum BehaviorType {
+    UNKNOWN = 0;
+    STANDING = 1;
+    SITTING = 2;
+    WALKING = 3;
+    RUNNING = 4;
+    FALLING = 5;
+    FIGHTING = 6;
+    CROWDING = 7;
+}
+
+// Single behavior detection
+message BehaviorDetection {
+    int32 person_id = 1;
+    BehaviorType behavior = 2;
+    float confidence = 3;
+    string description = 4;
+    string timestamp = 5;
+}
+
+// Behavior analysis request
+message AnalyzeBehaviorRequest {
+    repeated Image image_sequence = 1;  // Sequence of frames
+    repeated PersonDetection persons = 2;
+}
+
+// Behavior analysis response
+message AnalyzeBehaviorResponse {
+    repeated BehaviorDetection behaviors = 1;
+    bool success = 2;
+    string message = 3;
+    string timestamp = 4;
+}
+
+// ==================== Combined Detection (Future) ====================
+
+// Full analysis request (person + face + behavior)
+message FullAnalysisRequest {
+    Image image = 1;
+    bool detect_person = 2;
+    bool detect_face = 3;
+    bool analyze_behavior = 4;
+}
+
+// Full analysis response
+message FullAnalysisResponse {
+    DetectPersonResponse person_result = 1;
+    DetectFaceResponse face_result = 2;
+    AnalyzeBehaviorResponse behavior_result = 3;
+    bool success = 4;
+    string message = 5;
+    string timestamp = 6;
+}
+
+// ==================== Service Definition ====================
+
+service DetectionService {
+    // Person detection (IMPLEMENTED NOW)
+    rpc DetectPerson(DetectPersonRequest) returns (DetectPersonResponse);
+    
+    // Face detection (FUTURE)
+    rpc DetectFace(DetectFaceRequest) returns (DetectFaceResponse);
+    
+    // Face recognition (FUTURE)
+    rpc RecognizeFace(RecognizeFaceRequest) returns (RecognizeFaceResponse);
+    
+    // Behavior analysis (FUTURE)
+    rpc AnalyzeBehavior(AnalyzeBehaviorRequest) returns (AnalyzeBehaviorResponse);
+    
+    // Full analysis (FUTURE)
+    rpc FullAnalysis(FullAnalysisRequest) returns (FullAnalysisResponse);
+    
+    // Health check
+    rpc HealthCheck(HealthCheckRequest) returns (HealthCheckResponse);
+}
+
+// Health check messages
+message HealthCheckRequest {
+    string service = 1;
+}
+
+message HealthCheckResponse {
+    bool healthy = 1;
+    string version = 2;
+    string timestamp = 3;
+    string message = 4;
+}
