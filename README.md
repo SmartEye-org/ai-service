@@ -16,29 +16,29 @@ The service integrates seamlessly with the NestJS backend via gRPC for low-laten
 
 ## Features
 
-### 🤖 AI/ML Capabilities
-- ✅ **Person Detection**: YOLOv8n model with 90%+ accuracy
-- ✅ **Face Detection**: MediaPipe Face Detection with high precision
-- ✅ **Face Recognition**: InsightFace ArcFace 512-dimensional embeddings
-- ✅ **Action Classification**: Behavior detection (walking, standing, sitting, running, lying down)
-- ✅ **Bounding Box Generation**: Precise person and face localization
-- ✅ **Confidence Scoring**: Detection confidence thresholds
-- ✅ **Track ID Assignment**: Person tracking across frames
+### AI/ML Capabilities
+- **Person Detection**: YOLOv8n model with 90%+ accuracy
+- **Face Detection**: MediaPipe Face Detection with high precision
+- **Face Recognition**: InsightFace ArcFace 512-dimensional embeddings
+- **Action Classification**: Behavior detection (walking, standing, sitting, running, lying down)
+- **Bounding Box Generation**: Precise person and face localization
+- **Confidence Scoring**: Detection confidence thresholds
+- **Track ID Assignment**: Person tracking across frames
 
-### 🚀 API & Communication
-- ✅ **RESTful API**: FastAPI with automatic OpenAPI documentation
-- ✅ **gRPC Server**: High-performance RPC for backend integration (Port 50051)
-- ✅ **WebSocket Streaming**: Real-time video frame processing
-- ✅ **Batch Processing**: Efficient multi-frame detection
-- ✅ **Async Processing**: Non-blocking detection with asyncio
-- ✅ **NGSI-LD Output**: Smart city standard compliance
+### API & Communication
+- **RESTful API**: FastAPI with automatic OpenAPI documentation
+- **gRPC Server**: High-performance RPC for backend integration (Port 50051)
+- **WebSocket Streaming**: Real-time video frame processing
+- **Batch Processing**: Efficient multi-frame detection
+- **Async Processing**: Non-blocking detection with asyncio
+- **NGSI-LD Output**: Smart city standard compliance
 
-### ⚡ Performance Optimization
-- ✅ **GPU Acceleration**: CUDA support for PyTorch inference
-- ✅ **Frame Skipping**: Configurable processing rates
-- ✅ **Batch Inference**: Process multiple frames simultaneously
-- ✅ **Connection Pooling**: Efficient WebSocket management
-- ✅ **Async I/O**: Non-blocking operations
+### Performance Optimization
+- **GPU Acceleration**: CUDA support for PyTorch inference
+- **Frame Skipping**: Configurable processing rates
+- **Batch Inference**: Process multiple frames simultaneously
+- **Connection Pooling**: Efficient WebSocket management
+- **Async I/O**: Non-blocking operations
 
 ## Technology Stack
 
