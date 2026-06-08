@@ -4,7 +4,6 @@ package detection;
 
 // ==================== Common Messages ====================
 
-// Bounding box coordinates
 message BoundingBox {
     int32 x1 = 1;
     int32 y1 = 2;
@@ -12,174 +11,176 @@ message BoundingBox {
     int32 y2 = 4;
 }
 
-// Image data
 message Image {
-    bytes image_data = 1;  // Encoded image (JPEG/PNG)
+    bytes image_data = 1;
     string camera_id = 2;
-    string timestamp = 3;
+    string timestamp  = 3;
 }
 
 // ==================== Person Detection ====================
 
-// Single person detection result
 message PersonDetection {
-    int32 person_id = 1;
-    BoundingBox bbox = 2;
-    float confidence = 3;
-    bool face_detected = 4;  // Face detection result
-    string timestamp = 5;
+    int32  person_id     = 1;
+    BoundingBox bbox     = 2;
+    float  confidence    = 3;
+    bool   face_detected = 4;
+    string timestamp     = 5;
+    string track_id      = 6;  // Stable cross-frame ID
+    string action        = 7;  // walking/running/standing/sitting/lying/unknown
+    bool   violation_detected  = 8;
+    string violation_type      = 9;  // lying/running/unauthorized_access/...
+    string violation_severity  = 10; // low/medium/high/critical
+    string violation_description = 11;
 }
 
-// Person detection request
 message DetectPersonRequest {
-    Image image = 1;
+    Image  image    = 1;
+    string location = 2;  // Camera location label
 }
 
-// Person detection response
 message DetectPersonResponse {
     repeated PersonDetection detections = 1;
-    int32 total_persons = 2;
-    string timestamp = 3;
-    bool success = 4;
-    string message = 5;
+    int32  total_persons = 2;
+    string timestamp     = 3;
+    bool   success       = 4;
+    string message       = 5;
+    repeated PersonDetection violations = 6;  // Subset with violation_detected=true
 }
 
-// ==================== Face Detection (Future) ====================
+// ==================== Face Detection ====================
 
-// Face detection result
 message FaceDetection {
-    int32 face_id = 1;
-    BoundingBox bbox = 2;
-    float confidence = 3;
-    repeated float landmarks = 4;  // Facial landmarks (x1,y1,x2,y2,...)
-    string timestamp = 5;
+    int32  face_id              = 1;
+    BoundingBox bbox            = 2;
+    float  confidence           = 3;
+    repeated float landmarks    = 4;
+    string timestamp            = 5;
 }
 
-// Face detection request
 message DetectFaceRequest {
-    Image image = 1;
-    BoundingBox roi = 2;  // Optional: Region of Interest
+    Image       image = 1;
+    BoundingBox roi   = 2;
 }
 
-// Face detection response
 message DetectFaceResponse {
     repeated FaceDetection detections = 1;
-    int32 total_faces = 2;
-    string timestamp = 3;
-    bool success = 4;
-    string message = 5;
+    int32  total_faces = 2;
+    string timestamp   = 3;
+    bool   success     = 4;
+    string message     = 5;
 }
 
-// ==================== Face Recognition (Future) ====================
+// ==================== Face Recognition ====================
 
-// Face recognition result
 message FaceRecognition {
-    int32 face_id = 1;
-    string person_name = 2;
-    float confidence = 3;
-    repeated float embedding = 4;  // Face embedding vector
+    int32  face_id              = 1;
+    string person_name          = 2;
+    float  confidence           = 3;
+    repeated float embedding    = 4;
+    string person_id            = 5;  // Resident ID if matched
 }
 
-// Face recognition request
 message RecognizeFaceRequest {
-    Image image = 1;
+    Image       image     = 1;
     BoundingBox face_bbox = 2;
+    string      camera_id = 3;
 }
 
-// Face recognition response
 message RecognizeFaceResponse {
     FaceRecognition recognition = 1;
-    bool success = 2;
-    string message = 3;
+    bool   success  = 2;
+    string message  = 3;
 }
 
-// ==================== Behavior Analysis (Future) ====================
+// ==================== Behavior Analysis ====================
 
-// Behavior type enum
 enum BehaviorType {
-    UNKNOWN = 0;
+    UNKNOWN  = 0;
     STANDING = 1;
-    SITTING = 2;
-    WALKING = 3;
-    RUNNING = 4;
-    FALLING = 5;
+    SITTING  = 2;
+    WALKING  = 3;
+    RUNNING  = 4;
+    LYING    = 5;
     FIGHTING = 6;
     CROWDING = 7;
 }
 
-// Single behavior detection
 message BehaviorDetection {
-    int32 person_id = 1;
-    BehaviorType behavior = 2;
-    float confidence = 3;
-    string description = 4;
-    string timestamp = 5;
+    string track_id           = 1;  // Changed from person_id (int) to track_id (string)
+    BehaviorType behavior     = 2;
+    string behavior_label     = 3;  // Human-readable: "lying", "running"
+    float  confidence         = 4;
+    string description        = 5;
+    string timestamp          = 6;
+    bool   is_violation       = 7;
+    string violation_severity = 8;
 }
 
-// Behavior analysis request
 message AnalyzeBehaviorRequest {
-    repeated Image image_sequence = 1;  // Sequence of frames
-    repeated PersonDetection persons = 2;
+    Image  image              = 1;
+    string camera_id          = 2;
+    repeated PersonDetection persons = 3;  // Pre-detected persons to analyze
 }
 
-// Behavior analysis response
 message AnalyzeBehaviorResponse {
     repeated BehaviorDetection behaviors = 1;
-    bool success = 2;
-    string message = 3;
+    bool   success   = 2;
+    string message   = 3;
     string timestamp = 4;
 }
 
-// ==================== Combined Detection (Future) ====================
+// ==================== Full Analysis (Person + Face + Behavior) ====================
 
-// Full analysis request (person + face + behavior)
 message FullAnalysisRequest {
-    Image image = 1;
-    bool detect_person = 2;
-    bool detect_face = 3;
-    bool analyze_behavior = 4;
+    Image  image            = 1;
+    string camera_id        = 2;
+    string location         = 3;
+    bool   detect_person    = 4;
+    bool   detect_face      = 5;
+    bool   analyze_behavior = 6;
 }
 
-// Full analysis response
 message FullAnalysisResponse {
-    DetectPersonResponse person_result = 1;
-    DetectFaceResponse face_result = 2;
-    AnalyzeBehaviorResponse behavior_result = 3;
-    bool success = 4;
-    string message = 5;
-    string timestamp = 6;
+    repeated PersonDetection detections = 1;  // All persons with behavior + violations
+    repeated PersonDetection violations = 2;  // Subset with violations
+    int32  total_persons  = 3;
+    bool   success        = 4;
+    string message        = 5;
+    string timestamp      = 6;
+    string camera_id      = 7;
 }
 
 // ==================== Service Definition ====================
 
 service DetectionService {
-    // Person detection (IMPLEMENTED NOW)
+    // Person detection with tracking + behavior (PRIMARY endpoint)
     rpc DetectPerson(DetectPersonRequest) returns (DetectPersonResponse);
-    
-    // Face detection (FUTURE)
+
+    // Face detection (standalone)
     rpc DetectFace(DetectFaceRequest) returns (DetectFaceResponse);
-    
-    // Face recognition (FUTURE)
+
+    // Face recognition + resident matching
     rpc RecognizeFace(RecognizeFaceRequest) returns (RecognizeFaceResponse);
-    
-    // Behavior analysis (FUTURE)
+
+    // Behavior analysis from pre-detected persons
     rpc AnalyzeBehavior(AnalyzeBehaviorRequest) returns (AnalyzeBehaviorResponse);
-    
-    // Full analysis (FUTURE)
+
+    // Full pipeline in one call (recommended for streaming)
     rpc FullAnalysis(FullAnalysisRequest) returns (FullAnalysisResponse);
-    
+
     // Health check
     rpc HealthCheck(HealthCheckRequest) returns (HealthCheckResponse);
 }
 
-// Health check messages
+// ==================== Health Check ====================
+
 message HealthCheckRequest {
     string service = 1;
 }
 
 message HealthCheckResponse {
-    bool healthy = 1;
-    string version = 2;
+    bool   healthy   = 1;
+    string version   = 2;
     string timestamp = 3;
-    string message = 4;
+    string message   = 4;
 }
