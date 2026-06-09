@@ -17,6 +17,7 @@ pydantic-settings==2.1.0
 torch==2.7.0
 torchvision==0.21.0
 ultralytics>=8.3.0  # Version 8.3+ supports Python 3.13
+mediapipe>=0.10.0
 opencv-python==4.10.0.84
 numpy>=1.26.0  # Python 3.13 compatible
 Pillow==10.1.0

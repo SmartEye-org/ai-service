@@ -1,6 +1,6 @@
 """
-gRPC Server Implementation
-Triển khai các service được định nghĩa trong proto/detection_service.proto
+gRPC Server Implementation — Phase 2 complete.
+Implements: DetectPerson (with tracking+behavior), FullAnalysis, HealthCheck.
 """
 import grpc
 from concurrent import futures
@@ -9,268 +9,286 @@ import numpy as np
 from datetime import datetime
 import sys
 import os
+import logging
 
-# Add project root to path
+logger = logging.getLogger(__name__)
+
+# Project root on path
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../..'))
 sys.path.insert(0, project_root)
 
-# Import generated proto files (sẽ được generate từ .proto)
 try:
     from proto import detection_service_pb2
     from proto import detection_service_pb2_grpc
 except ImportError as e:
-    print(f"⚠️  Proto files chưa được generate! Error: {e}")
+    print(f"⚠️  Proto files not generated! Error: {e}")
     print("Run: python -m grpc_tools.protoc -I./proto --python_out=./proto --grpc_python_out=./proto ./proto/detection_service.proto")
     sys.exit(1)
 
-# Import detection services
-from app.services.person_detector import get_person_detector
+from app.services.detection import get_detection_service
 from app.services.face_detector import get_face_detector
-from app.services.behavior_analyzer import get_behavior_analyzer
+
+
+def _bbox_msg(bbox: list) -> "detection_service_pb2.BoundingBox":
+    """Convert [x1,y1,x2,y2] list to BoundingBox proto message."""
+    return detection_service_pb2.BoundingBox(
+        x1=bbox[0], y1=bbox[1], x2=bbox[2], y2=bbox[3]
+    )
+
+
+def _person_detection_msg(det: dict) -> "detection_service_pb2.PersonDetection":
+    """Convert detection dict to PersonDetection proto message."""
+    return detection_service_pb2.PersonDetection(
+        person_id=det.get("person_id", 0),
+        bbox=_bbox_msg(det["bbox"]),
+        confidence=float(det.get("confidence", 0.0)),
+        face_detected=bool(det.get("face_detected", False)),
+        timestamp=det.get("timestamp", datetime.now().isoformat()),
+        track_id=det.get("track_id", ""),
+        action=det.get("action", "unknown"),
+        violation_detected=bool(det.get("violation_detected", False)),
+        violation_type=det.get("violation_type") or "",
+        violation_severity=det.get("violation_severity") or "",
+        violation_description=det.get("violation_description") or "",
+    )
+
+
+def _decode_image(image_bytes: bytes) -> np.ndarray:
+    """Decode bytes to BGR numpy array."""
+    nparr = np.frombuffer(image_bytes, np.uint8)
+    img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+    if img is None:
+        raise ValueError("Failed to decode image data")
+    return img
 
 
 class DetectionServicer(detection_service_pb2_grpc.DetectionServiceServicer):
-    """
-    Implementation của DetectionService gRPC
-    """
-    
+    """gRPC DetectionService — Phase 2 implementation."""
+
     def __init__(self):
-        """Initialize all detection services"""
-        print("🚀 Initializing gRPC Detection Service...")
-        
-        # Load detection modules
-        self.person_detector = get_person_detector()
+        logger.info("Initializing gRPC DetectionServicer...")
+        self.detection_service = get_detection_service()
         self.face_detector = get_face_detector()
-        self.behavior_analyzer = get_behavior_analyzer()
-        
-        print("✅ gRPC Detection Service ready!")
-    
+        logger.info("✅ gRPC DetectionServicer ready")
+
+    # ─── DetectPerson ──────────────────────────────────────────────────────────
+
     def DetectPerson(self, request, context):
         """
-        Phát hiện người trong ảnh
-        IMPLEMENTED - Phase 1
+        Full person detection pipeline:
+        YOLO → Tracker → Behavior → Face check
         """
         try:
-            # Decode image from bytes
-            image_bytes = request.image.image_data
-            nparr = np.frombuffer(image_bytes, np.uint8)
-            image = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-            
-            if image is None:
-                context.set_code(grpc.StatusCode.INVALID_ARGUMENT)
-                context.set_details('Invalid image data')
-                return detection_service_pb2.DetectPersonResponse(
-                    success=False,
-                    message="Invalid image data"
-                )
-            
-            # Detect persons
-            detections = self.person_detector.detect(image)
-            
-            # Check face for each person
-            for detection in detections:
-                bbox = detection['bbox']
-                detection['face_detected'] = self.face_detector.check_face_in_roi(
-                    image, bbox
-                )
-            
-            # Build response
-            response_detections = []
-            for det in detections:
-                bbox_msg = detection_service_pb2.BoundingBox(
-                    x1=det['bbox'][0],
-                    y1=det['bbox'][1],
-                    x2=det['bbox'][2],
-                    y2=det['bbox'][3]
-                )
-                
-                person_det = detection_service_pb2.PersonDetection(
-                    person_id=det['person_id'],
-                    bbox=bbox_msg,
-                    confidence=det['confidence'],
-                    face_detected=det['face_detected'],
-                    timestamp=det['timestamp']
-                )
-                response_detections.append(person_det)
-            
+            img = _decode_image(request.image.image_data)
+            camera_id = request.image.camera_id or "unknown"
+
+            result = self.detection_service.process_frame(img, camera_id=camera_id)
+
+            detections_pb = [_person_detection_msg(d) for d in result["detections"]]
+            violations_pb = [_person_detection_msg(d) for d in result["violations"]]
+
             return detection_service_pb2.DetectPersonResponse(
-                detections=response_detections,
-                total_persons=len(detections),
-                timestamp=datetime.now().isoformat(),
+                detections=detections_pb,
+                violations=violations_pb,
+                total_persons=result["total_persons"],
+                timestamp=result["timestamp"],
                 success=True,
-                message=f"Detected {len(detections)} persons"
+                message=f"Detected {result['total_persons']} persons, {len(result['violations'])} violations",
             )
-            
+
+        except ValueError as e:
+            context.set_code(grpc.StatusCode.INVALID_ARGUMENT)
+            context.set_details(str(e))
+            return detection_service_pb2.DetectPersonResponse(success=False, message=str(e))
+
         except Exception as e:
-            print(f"❌ Error in DetectPerson: {e}")
+            logger.error(f"DetectPerson error: {e}", exc_info=True)
             context.set_code(grpc.StatusCode.INTERNAL)
             context.set_details(str(e))
-            return detection_service_pb2.DetectPersonResponse(
-                success=False,
-                message=f"Error: {str(e)}"
-            )
-    
+            return detection_service_pb2.DetectPersonResponse(success=False, message=str(e))
+
+    # ─── DetectFace ────────────────────────────────────────────────────────────
+
     def DetectFace(self, request, context):
-        """
-        Phát hiện khuôn mặt
-        FUTURE IMPLEMENTATION - Phase 2
-        """
         try:
-            # Decode image
-            image_bytes = request.image.image_data
-            nparr = np.frombuffer(image_bytes, np.uint8)
-            image = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-            
-            if image is None:
-                context.set_code(grpc.StatusCode.INVALID_ARGUMENT)
-                context.set_details('Invalid image data')
-                return detection_service_pb2.DetectFaceResponse(
-                    success=False,
-                    message="Invalid image data"
-                )
-            
-            # Extract ROI if provided
+            img = _decode_image(request.image.image_data)
+
             roi = None
-            if request.HasField('roi'):
-                roi = [
-                    request.roi.x1,
-                    request.roi.y1,
-                    request.roi.x2,
-                    request.roi.y2
-                ]
-            
-            # Detect faces
-            face_detections = self.face_detector.detect(image, roi)
-            
-            # Build response
-            response_detections = []
-            for det in face_detections:
-                bbox_msg = detection_service_pb2.BoundingBox(
-                    x1=det['bbox'][0],
-                    y1=det['bbox'][1],
-                    x2=det['bbox'][2],
-                    y2=det['bbox'][3]
+            if request.HasField("roi"):
+                roi = [request.roi.x1, request.roi.y1, request.roi.x2, request.roi.y2]
+
+            face_dets = self.face_detector.detect(img, roi)
+
+            response_dets = [
+                detection_service_pb2.FaceDetection(
+                    face_id=d["face_id"],
+                    bbox=_bbox_msg(d["bbox"]),
+                    confidence=float(d["confidence"]),
+                    landmarks=d.get("landmarks", []),
+                    timestamp=d.get("timestamp", datetime.now().isoformat()),
                 )
-                
-                face_det = detection_service_pb2.FaceDetection(
-                    face_id=det['face_id'],
-                    bbox=bbox_msg,
-                    confidence=det['confidence'],
-                    landmarks=det['landmarks'],
-                    timestamp=det['timestamp']
-                )
-                response_detections.append(face_det)
-            
+                for d in face_dets
+            ]
+
             return detection_service_pb2.DetectFaceResponse(
-                detections=response_detections,
-                total_faces=len(face_detections),
+                detections=response_dets,
+                total_faces=len(face_dets),
                 timestamp=datetime.now().isoformat(),
                 success=True,
-                message=f"Detected {len(face_detections)} faces"
+                message=f"Detected {len(face_dets)} faces",
             )
-            
+
         except Exception as e:
-            print(f"❌ Error in DetectFace: {e}")
+            logger.error(f"DetectFace error: {e}")
             context.set_code(grpc.StatusCode.INTERNAL)
             context.set_details(str(e))
-            return detection_service_pb2.DetectFaceResponse(
-                success=False,
-                message=f"Error: {str(e)}"
-            )
-    
+            return detection_service_pb2.DetectFaceResponse(success=False, message=str(e))
+
+    # ─── RecognizeFace (placeholder for Phase 3 ArcFace) ──────────────────────
+
     def RecognizeFace(self, request, context):
-        """
-        Nhận diện khuôn mặt
-        FUTURE IMPLEMENTATION - Phase 3
-        """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
-        context.set_details('Face recognition not implemented yet')
+        context.set_details("ArcFace recognition not implemented yet (Phase 3)")
         return detection_service_pb2.RecognizeFaceResponse(
             success=False,
-            message="Face recognition not implemented yet"
+            message="ArcFace recognition coming in Phase 3",
         )
-    
+
+    # ─── AnalyzeBehavior ───────────────────────────────────────────────────────
+
     def AnalyzeBehavior(self, request, context):
         """
-        Phân tích hành vi
-        FUTURE IMPLEMENTATION - Phase 3
+        Analyze behavior for pre-detected persons.
+        Accepts PersonDetection list + frame image.
         """
-        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
-        context.set_details('Behavior analysis not implemented yet')
-        return detection_service_pb2.AnalyzeBehaviorResponse(
-            success=False,
-            message="Behavior analysis not implemented yet"
-        )
-    
+        try:
+            img = _decode_image(request.image.image_data)
+            camera_id = request.camera_id or "unknown"
+
+            behaviors = []
+            for person in request.persons:
+                bbox = [person.bbox.x1, person.bbox.y1, person.bbox.x2, person.bbox.y2]
+                result = self.detection_service.behavior_analyzer.analyze(img, bbox)
+
+                b_type = _action_to_behavior_type(result["action"])
+                behaviors.append(
+                    detection_service_pb2.BehaviorDetection(
+                        track_id=person.track_id,
+                        behavior=b_type,
+                        behavior_label=result["action"],
+                        confidence=float(result["confidence"]),
+                        description=result.get("violation_description") or result["action"],
+                        timestamp=datetime.now().isoformat(),
+                        is_violation=result["violation"],
+                        violation_severity=result.get("violation_severity") or "",
+                    )
+                )
+
+            return detection_service_pb2.AnalyzeBehaviorResponse(
+                behaviors=behaviors,
+                success=True,
+                message=f"Analyzed {len(behaviors)} persons",
+                timestamp=datetime.now().isoformat(),
+            )
+
+        except Exception as e:
+            logger.error(f"AnalyzeBehavior error: {e}")
+            context.set_code(grpc.StatusCode.INTERNAL)
+            context.set_details(str(e))
+            return detection_service_pb2.AnalyzeBehaviorResponse(success=False, message=str(e))
+
+    # ─── FullAnalysis ──────────────────────────────────────────────────────────
+
     def FullAnalysis(self, request, context):
         """
-        Phân tích toàn diện (person + face + behavior)
-        FUTURE IMPLEMENTATION - Phase 3
+        One-call full pipeline: YOLO + Tracker + Behavior + Face.
+        This is the recommended endpoint for streaming use.
         """
-        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
-        context.set_details('Full analysis not implemented yet')
-        return detection_service_pb2.FullAnalysisResponse(
-            success=False,
-            message="Full analysis not implemented yet"
-        )
-    
+        try:
+            img = _decode_image(request.image.image_data)
+            camera_id = request.camera_id or request.image.camera_id or "unknown"
+
+            result = self.detection_service.process_frame(img, camera_id=camera_id)
+
+            detections_pb = [_person_detection_msg(d) for d in result["detections"]]
+            violations_pb = [_person_detection_msg(d) for d in result["violations"]]
+
+            return detection_service_pb2.FullAnalysisResponse(
+                detections=detections_pb,
+                violations=violations_pb,
+                total_persons=result["total_persons"],
+                success=True,
+                message=(
+                    f"Full analysis: {result['total_persons']} persons, "
+                    f"{len(result['violations'])} violations"
+                ),
+                timestamp=result["timestamp"],
+                camera_id=camera_id,
+            )
+
+        except ValueError as e:
+            context.set_code(grpc.StatusCode.INVALID_ARGUMENT)
+            context.set_details(str(e))
+            return detection_service_pb2.FullAnalysisResponse(success=False, message=str(e))
+
+        except Exception as e:
+            logger.error(f"FullAnalysis error: {e}", exc_info=True)
+            context.set_code(grpc.StatusCode.INTERNAL)
+            context.set_details(str(e))
+            return detection_service_pb2.FullAnalysisResponse(success=False, message=str(e))
+
+    # ─── HealthCheck ───────────────────────────────────────────────────────────
+
     def HealthCheck(self, request, context):
-        """
-        Health check endpoint
-        IMPLEMENTED
-        """
         return detection_service_pb2.HealthCheckResponse(
             healthy=True,
-            version="1.0.0",
+            version="2.0.0",
             timestamp=datetime.now().isoformat(),
-            message="Service is healthy"
+            message="DetectionService healthy — Behavior analysis active",
         )
 
 
-def serve(port: int = 8000, max_workers: int = 10):
-    """
-    Start gRPC server
-    
-    Args:
-        port: Port to listen on
-        max_workers: Max thread pool workers
-    """
-    server = grpc.server(futures.ThreadPoolExecutor(max_workers=max_workers))
-    
-    # Add servicer
+def _action_to_behavior_type(action: str) -> int:
+    """Map action string to BehaviorType enum value."""
+    mapping = {
+        "standing": 1,  # STANDING
+        "sitting":  2,  # SITTING
+        "walking":  3,  # WALKING
+        "running":  4,  # RUNNING
+        "lying":    5,  # LYING
+    }
+    return mapping.get(action, 0)  # 0 = UNKNOWN
+
+
+def serve(port: int = 50051, max_workers: int = 4):
+    server = grpc.server(
+        futures.ThreadPoolExecutor(max_workers=max_workers),
+        options=[
+            ("grpc.max_send_message_length", 50 * 1024 * 1024),
+            ("grpc.max_receive_message_length", 50 * 1024 * 1024),
+        ],
+    )
     detection_service_pb2_grpc.add_DetectionServiceServicer_to_server(
         DetectionServicer(), server
     )
-    
-    # Bind port
-    server.add_insecure_port(f'[::]:{port}')
-    
-    print(f"🚀 gRPC Server starting on port {port}...")
+    server.add_insecure_port(f"[::]:{port}")
+    logger.info(f"🚀 gRPC server starting on [::]:{port}")
     server.start()
-    print(f"✅ gRPC Server listening on [::]:{port}")
-    print(f"   Max workers: {max_workers}")
-    print(f"   Services available:")
-    print(f"   - DetectPerson (IMPLEMENTED)")
-    print(f"   - DetectFace (IMPLEMENTED)")
-    print(f"   - RecognizeFace (FUTURE)")
-    print(f"   - AnalyzeBehavior (FUTURE)")
-    print(f"   - FullAnalysis (FUTURE)")
-    print(f"   - HealthCheck (IMPLEMENTED)")
-    
+    logger.info(
+        f"✅ gRPC server ready | DetectPerson ✓ | FullAnalysis ✓ | AnalyzeBehavior ✓"
+    )
     try:
         server.wait_for_termination()
     except KeyboardInterrupt:
-        print("\n🛑 Shutting down gRPC server...")
+        logger.info("Shutting down gRPC server...")
         server.stop(0)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     import argparse
-    
-    parser = argparse.ArgumentParser(description='gRPC Detection Service')
-    parser.add_argument('--port', type=int, default=8000, help='Port to listen on')
-    parser.add_argument('--workers', type=int, default=10, help='Max thread pool workers')
-    
+    logging.basicConfig(level=logging.INFO)
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--port", type=int, default=50051)
+    parser.add_argument("--workers", type=int, default=4)
     args = parser.parse_args()
-    
     serve(port=args.port, max_workers=args.workers)
